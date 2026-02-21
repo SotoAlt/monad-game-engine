@@ -4,8 +4,11 @@
 
 import { state, auth } from '../state.js';
 import { isSpectator, API_URL } from '../config.js';
-import { getToken, getEmbeddedWalletAddress, exportWallet, logout } from '../auth.js';
+import { getToken, getEmbeddedWalletAddress, getEmbeddedWalletProvider, exportWallet, logout } from '../auth.js';
 import { showToast } from './Announcements.js';
+
+const TREASURY_ADDRESS = import.meta.env.VITE_TREASURY_ADDRESS;
+const TIP_AMOUNT = '0.01'; // MON
 
 const DEFAULT_AVATAR = 'data:image/svg+xml,' + encodeURIComponent(
   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">' +
@@ -178,6 +181,14 @@ function populateWalletPanel(user) {
   refreshBalance();
   setInterval(refreshBalance, 30000);
 
+  // Tip button — sends MON to treasury address
+  const tipBtn = document.getElementById('wp-tip');
+  const tipStatus = document.getElementById('wp-tip-status');
+  if (tipBtn && TREASURY_ADDRESS) {
+    tipBtn.style.display = 'block';
+    tipBtn.addEventListener('click', () => sendTip(tipBtn, tipStatus, refreshBalance));
+  }
+
   copyBtn.addEventListener('click', () => {
     const full = addressEl.dataset.full;
     if (!full) return;
@@ -255,4 +266,82 @@ function populateWalletPanel(user) {
       showToast('Could not export wallet', 'error');
     }
   });
+}
+
+async function sendTip(btn, statusEl, refreshBalance) {
+  btn.disabled = true;
+  btn.textContent = 'Sending...';
+  statusEl.style.display = 'block';
+  statusEl.className = 'wp-tip-status pending';
+  statusEl.textContent = 'Preparing transaction...';
+
+  try {
+    const walletData = await getEmbeddedWalletProvider();
+    if (!walletData) {
+      throw new Error('No wallet available. Log in with Twitter first.');
+    }
+
+    const { createWalletClient, createPublicClient, custom, parseEther, defineChain } = await import('viem');
+
+    const monad = defineChain({
+      id: 10143,
+      name: 'Monad Devnet',
+      nativeCurrency: { name: 'MON', symbol: 'MON', decimals: 18 },
+      rpcUrls: { default: { http: [import.meta.env.VITE_MONAD_RPC_URL || 'https://rpc.monad.xyz'] } },
+    });
+
+    const walletClient = createWalletClient({
+      account: walletData.address,
+      chain: monad,
+      transport: custom(walletData.provider),
+    });
+
+    const publicClient = createPublicClient({
+      chain: monad,
+      transport: custom(walletData.provider),
+    });
+
+    statusEl.textContent = 'Confirm in your wallet...';
+
+    const hash = await walletClient.sendTransaction({
+      to: TREASURY_ADDRESS,
+      value: parseEther(TIP_AMOUNT),
+    });
+
+    statusEl.textContent = 'Waiting for confirmation...';
+
+    await publicClient.waitForTransactionReceipt({ hash, timeout: 30_000 });
+
+    statusEl.className = 'wp-tip-status success';
+    statusEl.textContent = `Sent ${TIP_AMOUNT} MON!`;
+    showToast(`Tip sent! ${TIP_AMOUNT} MON`);
+    refreshBalance();
+
+    // Record on server
+    try {
+      const token = localStorage.getItem('game:token');
+      await fetch(`${API_URL}/api/transactions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          txHash: hash,
+          amount: TIP_AMOUNT,
+          txType: 'tip',
+          description: 'Tip to treasury',
+        }),
+      });
+    } catch { /* server recording is best-effort */ }
+  } catch (e) {
+    console.error('[Wallet] Tip failed:', e);
+    statusEl.className = 'wp-tip-status error';
+    statusEl.textContent = e.message || 'Transaction failed';
+    showToast('Tip failed', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = `Send ${TIP_AMOUNT} MON Tip`;
+    setTimeout(() => { statusEl.style.display = 'none'; }, 5000);
+  }
 }

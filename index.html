@@ -40,18 +40,18 @@
       </div>
       <p id="login-status" class="login-status"></p>
       <div class="login-onboarding">
-        <h3>How it works</h3>
+        <h3>What's inside</h3>
         <div class="onboard-item">
-          <div class="onboard-icon">&#x1F3AE;</div>
-          <div class="onboard-text"><strong>AI-powered game master.</strong> An AI agent builds arenas, starts games, and reacts to players in real-time.</div>
+          <div class="onboard-icon">&#x1F680;</div>
+          <div class="onboard-text"><strong>WebGPU + Three.js engine.</strong> Cel-shaded toon rendering with adaptive quality and instanced batching.</div>
         </div>
         <div class="onboard-item">
-          <div class="onboard-icon">&#x1F4AC;</div>
-          <div class="onboard-text"><strong>Chat with @agent</strong> to request things &mdash; "spawn obstacles", "start a race", "make lava floor"</div>
+          <div class="onboard-icon">&#x1F3AE;</div>
+          <div class="onboard-text"><strong>Real-time multiplayer.</strong> Colyseus WebSocket rooms with server-authoritative physics and entity sync.</div>
         </div>
         <div class="onboard-item">
           <div class="onboard-icon">&#x26D3;</div>
-          <div class="onboard-text"><strong>Monad blockchain</strong> integration. Log in with Twitter to get a wallet.</div>
+          <div class="onboard-text"><strong>Monad blockchain.</strong> Privy auth with Twitter login and embedded wallets on Monad.</div>
         </div>
       </div>
     </div>
@@ -154,6 +154,8 @@
           <span class="wp-balance-label">MON</span>
         </div>
         <div class="wp-network">Monad</div>
+        <button id="wp-tip" class="wp-btn tip" style="display:none; margin-top:10px">Send 0.01 MON Tip</button>
+        <div id="wp-tip-status" class="wp-tip-status" style="display:none"></div>
       </div>
       <div id="wp-tab-history" class="wp-tab-content">
         <div class="wp-tx-list" id="wp-tx-list">
@@ -201,22 +203,22 @@
     <div class="help-content">
       <div class="help-header">
         <h2>Monad Game Engine</h2>
-        <p>An AI game master runs the show. Compete in mini-games!</p>
+        <p>Multiplayer 3D arena on Monad. Compete in mini-games!</p>
       </div>
       <div class="help-section">
-        <div class="help-section-title">The Concept</div>
+        <div class="help-section-title">Engine Features</div>
         <div class="help-row">
-          <div class="help-icon purple">&#x1F3AE;</div>
+          <div class="help-icon purple">&#x1F680;</div>
           <div>
-            <div class="help-label">The AI Game Master builds games live</div>
-            <div class="help-desc">It spawns arenas, starts mini-games, casts spells, and reacts to what players do.</div>
+            <div class="help-label">WebGPU + Three.js rendering</div>
+            <div class="help-desc">Cel-shaded toon materials, adaptive quality, instanced batching for hundreds of entities.</div>
           </div>
         </div>
         <div class="help-row">
-          <div class="help-icon gold">&#x1F399;</div>
+          <div class="help-icon gold">&#x1F3AE;</div>
           <div>
-            <div class="help-label">Talk to it in chat with @agent</div>
-            <div class="help-desc">Ask for anything: "spawn obstacles", "start a race", "change the environment"</div>
+            <div class="help-label">Real-time multiplayer via Colyseus</div>
+            <div class="help-desc">WebSocket rooms, server-authoritative physics, entity sync, and spectator mode.</div>
           </div>
         </div>
       </div>
@@ -225,15 +227,15 @@
         <div class="help-row">
           <div class="help-icon green">&#x23F3;</div>
           <div>
-            <div class="help-label">Games start automatically</div>
-            <div class="help-desc">Wait in the lobby &mdash; a new game starts every ~20 seconds or when the agent decides.</div>
+            <div class="help-label">Mini-games with auto-start</div>
+            <div class="help-desc">Games start on a timer or via the API. Extensible game type system.</div>
           </div>
         </div>
         <div class="help-row">
-          <div class="help-icon red">&#x1F3C6;</div>
+          <div class="help-icon red">&#x26D3;</div>
           <div>
-            <div class="help-label">Compete in mini-games</div>
-            <div class="help-desc">Race to goals, survive obstacles, and climb the leaderboard.</div>
+            <div class="help-label">Monad blockchain integration</div>
+            <div class="help-desc">Privy auth, Twitter login, embedded wallets, and on-chain transactions.</div>
           </div>
         </div>
       </div>

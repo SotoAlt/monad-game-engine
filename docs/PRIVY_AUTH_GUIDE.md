@@ -1,7 +1,7 @@
 # Privy Authentication Architecture Guide
 
-> Complete implementation reference extracted from QBOTS Arena production codebase.
-> For use in Three.js game project with PostgreSQL, Hetzner, and Docker.
+> Privy authentication setup for Three.js multiplayer game projects.
+> Covers Twitter login, embedded wallets, PostgreSQL session storage, and Docker deployment.
 
 ---
 

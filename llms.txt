@@ -1,0 +1,828 @@
+# Monad Game Engine
+
+> Multiplayer 3D game engine with optional AI game master, WebGPU rendering, and Monad blockchain integration. Built with Three.js + Colyseus + Express.
+
+## What This Project Is
+
+Monad Game Engine is a full-stack multiplayer 3D game platform that runs in the browser. Players connect, join arenas, and compete in mini-games. An optional AI agent acts as a "Game Master" — building arenas, spawning obstacles, casting spells, and reacting to players in real time.
+
+The engine is designed as a **multi-tenant platform**: any AI agent can create and host its own arena via HTTP API. Each arena is fully isolated with its own game state, entity world, and API key.
+
+**Who it's for**: Game developers building browser-based multiplayer games, AI agent developers who want a game environment their agents can control, hackathon projects needing a working multiplayer game fast.
+
+**Key properties**:
+- Zero-config local dev: `npm install && npm run dev` works with guest auth and in-memory storage
+- Server-authoritative: all game state lives on the server, clients render and send input
+- Modular: rendering, physics, networking, UI, and game logic are separate modules
+- Extensible: add game types by subclassing MiniGame, add entities via API, add arenas via HTTP
+
+## Architecture Overview
+
+```
+Browser Client (Three.js + Colyseus)
+    |
+    | nginx (SSL + WebSocket + SSE)
+    |
+Game Server (Express + Colyseus, port 3000)
+    |           |            |            |
+    | HTTP API  | PostgreSQL | SSE Stream | ArenaManager (multi-tenant)
+    |           |            |            |
+    +-- Default Arena (AI agent optional)
+    +-- External Arena 1 (any AI agent -> HTTP API)
+    +-- External Arena N ...
+```
+
+**Server**: Express handles 50+ HTTP API endpoints across 7 route files. Colyseus manages WebSocket rooms filtered by `arenaId`. WorldState is a facade over 8 focused state managers.
+
+**Client**: Three.js with WebGPU renderer (WebGL fallback). Modular: entities/, physics/, network/, ui/, vfx/, audio/. Game loop at 60fps via requestAnimationFrame. Client-side prediction for movement, server reconciliation for game state.
+
+**Multi-Arena**: ArenaManager creates isolated ArenaInstance objects. Each arena has its own WorldState, game loop, SSE clients, and optional AI agent. Arena middleware resolves the correct arena from URL path. Up to 20 concurrent arenas.
+
+**Data flow - Player Movement**:
+```
+Keyboard -> InputManager -> PhysicsEngine (local prediction) -> sendToServer()
+-> GameRoom broadcast -> MessageHandlers -> RemotePlayers (interpolation)
+```
+
+**Data flow - Agent Action**:
+```
+Agent tick -> AgentLoop (should invoke?) -> AgentBridge -> AI Agent
+-> HTTP API (spawn/start_game/cast_spell/chat)
+-> WorldState mutation -> GameRoom broadcast -> Client update
+```
+
+**Data flow - Game Lifecycle**:
+```
+POST /api/game/start { template: "simple_arena" }
+-> gameService.startGame() -> ArenaTemplates.load()
+-> GameStateMachine: lobby -> countdown (3s, invulnerable)
+-> MiniGame.start() -> playing phase (obstacles spawn, tricks fire)
+-> Timer expires OR win condition -> MiniGame.end()
+-> Results broadcast, leaderboard record -> ended phase (3s)
+-> GameStateMachine: ended -> lobby (15s cooldown)
+```
+
+## Tech Stack
+
+| Technology | Version | Purpose |
+|------------|---------|---------|
+| Three.js | 0.183.1 | 3D rendering (WebGPU + WebGL fallback) |
+| Colyseus | 0.15.0 | Real-time multiplayer WebSocket rooms |
+| colyseus.js | 0.15.28 | Client-side Colyseus SDK |
+| Express | 4.18.2 | HTTP API server |
+| pg | 8.18.0 | PostgreSQL client |
+| @privy-io/react-auth | 3.13.1 | Client-side auth (Twitter + wallets) |
+| @privy-io/server-auth | 1.32.5 | Server-side Privy verification |
+| React | 19.2.4 | Auth widget only (not used for game UI) |
+| React DOM | 19.2.4 | React renderer for Privy widget |
+| Viem | 2.45.1 | Monad blockchain interaction |
+| jsonwebtoken | 9.0.3 | JWT signing/verification |
+| cors | 2.8.5 | Cross-origin request handling |
+| cannon-es | 0.20.0 | Physics (available but AABB used instead) |
+| buffer | 6.0.3 | Buffer polyfill for browser |
+| Vite | 5.0.0 | Build tool + dev server |
+| concurrently | 8.2.0 | Run server + client in parallel |
+| @vitejs/plugin-react | 5.1.3 | React JSX transform for Privy widget |
+
+## File Map
+
+### Server (`src/server/` — 46 files, ~9,200 lines)
+
+#### Core
+| File | Lines | Purpose |
+|------|-------|---------|
+| `index.js` | 232 | Express bootstrap, Colyseus server, route mounting, game tick loop (100ms), AFK detection, stale arena cleanup |
+| `WorldState.js` | 279 | Facade over 8 sub-managers. Re-exports all manager methods. Consumers access a single `worldState` object |
+| `GameRoom.js` | 402 | Colyseus Room subclass. WebSocket handlers: move, died, respawn, chat, trigger, collect, platform_step, afk_heartbeat. Spectator detection, rate limiting |
+| `MiniGame.js` | 376 | Base class for all game types. Trick system (time/score/death triggers), random obstacle spawning, time randomization, end-game flow |
+| `AgentLoop.js` | 372 | Agent scheduler. Drama score (0-100), player welcome detection, @mention fast-track, auto-pause when no humans. Optional |
+| `AgentBridge.js` | 181 | AI agent CLI invocation. Session management, prompt construction, response parsing. Optional |
+
+#### Arena System
+| File | Lines | Purpose |
+|------|-------|---------|
+| `ArenaManager.js` | 138 | Central registry. Create/get/list/delete arenas. Max 20 concurrent. Factory pattern. Stale detection (24h) |
+| `ArenaInstance.js` | 152 | Per-arena state bundle: WorldState, currentMiniGame, SSE clients, webhooks, timers, AI players, agentLoop ref |
+| `ArenaTemplates.js` | 89 | Pre-built arena layouts. 2 templates: `simple_arena`, `obstacle_course`. `randomizeTemplate()` varies positions/speeds |
+| `arenaMiddleware.js` | 56 | Express middleware. Resolves arenaId from URL, attaches ArenaInstance to `req.arena`. API key auth via X-Arena-API-Key header |
+
+#### Entity System
+| File | Lines | Purpose |
+|------|-------|---------|
+| `Prefabs.js` | 485 | 23 entity presets. `spawnPrefab()` creates grouped entities with `groupId`. Behaviors: patrol, rotate, pendulum, crush |
+| `Composer.js` | 273 | Compose system. Normalize description, validate recipe, cache to `data/compose-cache.json`, spawn. Supports prefabs + custom recipes with up to 12 children |
+
+#### AI
+| File | Lines | Purpose |
+|------|-------|---------|
+| `AIPlayer.js` | 331 | AI bot personalities. Action selection, chat simulation, obstacle avoidance. Enabled via `AI_PLAYERS=true` env var |
+
+#### Database & Auth
+| File | Lines | Purpose |
+|------|-------|---------|
+| `db.js` | 375 | PostgreSQL connection with in-memory fallback. Tables: users, leaderboard, game_history, arenas. Auto-creates tables |
+| `auth.js` | 99 | Privy JWT verification. `verifyPrivyToken()`, `signToken()`, `verifyToken()`, `requireAuth` middleware |
+| `validation.js` | 38 | Position/velocity/entity ID validation. `clampPosition()`, `clampVelocity()` |
+
+#### Constants
+| File | Lines | Purpose |
+|------|-------|---------|
+| `constants.js` | 75 | Server-only constants: PORT, timing (AFK_IDLE_MS=120000, AFK_KICK_MS=15000), ALL_TEMPLATES, template-to-gametype mapping |
+
+#### State Managers (`src/server/managers/`)
+| File | Lines | Purpose |
+|------|-------|---------|
+| `EntityManager.js` | 322 | Entities Map with secondary indices (`_kinematicIds`, `_chasingIds`, `_groupIndex`). CRUD, kinematic update, breaking platforms |
+| `PlayerManager.js` | 116 | Players Map. Join/leave, AFK tracking, spectator activation, `activeHumanCount` |
+| `GameStateMachine.js` | 183 | Phase lifecycle: lobby -> countdown -> playing -> ended. Timers, auto-start, game history (last 8 entries) |
+| `EnvironmentManager.js` | 147 | Physics config (gravity/friction/bounce), floor type, environment (sky/fog/lighting), hazard plane, respawn point |
+| `SpellManager.js` | 51 | Active effects array, cooldown tracking (10s), spell casting, duration management |
+| `ChatManager.js` | 68 | Messages array, announcements, events array, rate limiting |
+| `LeaderboardManager.js` | 54 | Score recording, top-N queries, DB sync on game end |
+| `ChallengeManager.js` | 70 | Challenge CRUD, completion tracking, attempt recording |
+| `index.js` | 42 | Manager exports |
+
+#### Routes (`src/server/routes/`)
+| File | Lines | Purpose |
+|------|-------|---------|
+| `worldRoutes.js` | 206 | Entity CRUD, environment, floor, physics, compose, destroy-group, hazard plane, respawn |
+| `gameRoutes.js` | 267 | Game start/end, chat, announce, leaderboard, spell, challenge, game state |
+| `agentRoutes.js` | 188 | Agent context (full state for AI), pause/resume, status, heartbeat, AI player toggle, SSE stream, webhooks, player list |
+| `publicRoutes.js` | 163 | Public state/leaderboard/events/stats, agent-player API (join/move/chat/leave/state) |
+| `arenaRoutes.js` | 88 | Arena CRUD (create/list/info/update/delete/upvote) |
+| `authRoutes.js` | 44 | Privy auth, guest auth, /me endpoint |
+| `index.js` | 40 | Route mounting orchestration |
+
+#### Services (`src/server/services/`)
+| File | Lines | Purpose |
+|------|-------|---------|
+| `gameService.js` | 158 | Game lifecycle callbacks, auto-start logic (20s timer), mini-game creation, end sequence |
+| `arenaService.js` | 127 | Arena CRUD coordination, callback setup, AI player spawning |
+
+#### Game Types (`src/server/games/`)
+| File | Lines | Purpose |
+|------|-------|---------|
+| `ReachGoal.js` | 166 | Race-to-goal. Spawns goal trigger, first to touch wins. Checkpoint support |
+| `index.js` | 42 | Game type registry. `createGameSync(type, worldState, broadcastFn, config)` factory |
+
+### Client (`src/client/` — 48 files, ~7,200 lines)
+
+#### Core
+| File | Lines | Purpose |
+|------|-------|---------|
+| `main.js` | 195 | Orchestrator. Initializes Three.js scene, connects Colyseus, runs game loop. Wires all modules |
+| `config.js` | 77 | URL params (debug, spectator, mobile, arenaId), server URL resolution |
+| `state.js` | 124 | Shared mutable state: player, camera, auth tokens, UI flags, countdown, physics |
+| `math.js` | 10 | `lerp(a, b, t)` utility |
+| `auth.js` | 233 | Privy client-side auth. JWT handling, user verification, logout |
+
+#### Rendering
+| File | Lines | Purpose |
+|------|-------|---------|
+| `SceneSetup.js` | 61 | Scene init, WebGPURenderer with WebGL fallback, ambient + directional lighting |
+| `ToonMaterials.js` | 270 | TSL NodeMaterial cel-shaded factory. Gradient maps, emissive tuning, theme support |
+| `PostProcessing.js` | 168 | 3-tier adaptive quality (high/medium/low). FPS monitoring, auto-tier switching, outline pass |
+| `ProceduralTextures.js` | 440 | Runtime texture generation. Noise patterns, gradient textures, surface materials |
+| `SurfaceShaders.js` | 159 | TSL surface shaders for ice (slide), conveyor (push), wind (force) surfaces |
+| `EnvironmentEffects.js` | 336 | Sky dome, fog, dynamic lighting, SpriteNodeMaterial ambient particles |
+| `PlayerVisuals.js` | 147 | Player character model (body + head + eyes), squash-stretch deformation |
+| `CameraController.js` | 177 | Orbit camera (gameplay) + free-fly camera (spectator). Pointer lock, zoom, mouse/touch |
+| `GeometryTemplates.js` | 201 | 16 named geometry templates: horn, tentacle, wing, dome, column, arch, bridge, ramp, spike, fin, claw, tooth, blade, shield, crown, helix |
+
+#### Entities
+| File | Lines | Purpose |
+|------|-------|---------|
+| `entities/EntityFactory.js` | 191 | Geometry + glow cache. Identical entities share geometry. Mesh creation factory |
+| `entities/EntityManager.js` | 317 | Entity lifecycle (add/update/remove). Composed group assembly (THREE.Group). Clone-on-write materials |
+| `entities/EntityBehaviors.js` | 126 | Kinematic (patrol paths), chasing (follow player), pendulum (swing), orbiting. Interpolation |
+| `entities/InstancedBatchManager.js` | 198 | InstancedMesh batching. Groups identical geometries into single draw calls |
+
+#### Physics
+| File | Lines | Purpose |
+|------|-------|---------|
+| `physics/PhysicsEngine.js` | 399 | AABB collision detection. Gravity, velocity integration, death/respawn, trigger activation, surface effects (ice/conveyor/wind) |
+| `physics/SpatialHash.js` | 86 | 2D grid (XZ plane), cell size 8. 3x3 neighborhood queries for O(1) collision lookups |
+
+#### Input
+| File | Lines | Purpose |
+|------|-------|---------|
+| `input/InputManager.js` | 89 | Keyboard action map: WASD/arrows for movement, space for jump, shift for sprint |
+| `input/MobileControls.js` | 188 | Virtual joystick (left touch), camera drag (right touch), jump button. Auto-detected |
+
+#### Network
+| File | Lines | Purpose |
+|------|-------|---------|
+| `ConnectionManager.js` | 60 | Colyseus connect/disconnect. Intentional disconnect flag, session management |
+| `network/NetworkManager.js` | 85 | Colyseus client, room join with arenaId, message dispatch, heartbeat |
+| `network/HttpApi.js` | 83 | REST polling: fetchInitialState(), fetchLeaderboard(), chat history |
+| `network/MessageHandlers.js` | 16 | Re-exports from handlers/ directory |
+| `network/handlers/GameStateHandlers.js` | 202 | game_state_changed, countdown, minigame_ended, collectible_picked, entities_batch |
+| `network/handlers/EntityHandlers.js` | 57 | entity_spawned, entity_modified, entity_destroyed |
+| `network/handlers/PlayerHandlers.js` | 71 | player_joined, player_left, player_respawned, player_temporarily_left, player_reconnected |
+| `network/handlers/EffectHandlers.js` | 134 | spell_cast, effects_cleared, environment_changed, floor_changed, physics_changed, afk_warning, afk_kicked, disconnect |
+
+#### Scene
+| File | Lines | Purpose |
+|------|-------|---------|
+| `scene/FloorManager.js` | 90 | Floor mesh lifecycle. Material swap on floor type change (solid/lava/none) |
+
+#### Rendering
+| File | Lines | Purpose |
+|------|-------|---------|
+| `rendering/RemotePlayers.js` | 214 | Remote player interpolation. Chat bubbles, death/respawn animations, name labels |
+
+#### Audio
+| File | Lines | Purpose |
+|------|-------|---------|
+| `audio/SoundManager.js` | 146 | Procedural tone generation. Countdown beeps, win fanfare, spell sounds, jump/land |
+
+#### VFX
+| File | Lines | Purpose |
+|------|-------|---------|
+| `vfx/ScreenEffects.js` | 148 | Camera shake, screen flash, vignette overlays, death/respawn particles |
+| `vfx/ParticleUtils.js` | 31 | TSL soft-circle node + SpriteNodeMaterial factory for WebGPU-native billboarded sprites |
+
+#### UI
+| File | Lines | Purpose |
+|------|-------|---------|
+| `ui/GameStatusHUD.js` | 108 | Timer overlay, score display, game phase indicator |
+| `ui/ChatSystem.js` | 118 | Chat input/output, @agent mention detection, message rendering |
+| `ui/Announcements.js` | 108 | Global announcements. Duration management, max 3 visible, display queue |
+| `ui/Leaderboard.js` | 58 | Top player list with ranking |
+| `ui/ProfilePanel.js` | 258 | Player profile, stats, blockchain wallet display, tip feature |
+| `ui/ArenaLobby.js` | 98 | Arena selection, listing, join interface |
+| `ui/AuthFlow.js` | 147 | Auth integration. Login/logout flows, token management |
+| `ui/BribePanel.js` | 200 | Bribe options UI. 6 predefined bribes (30-200 tokens) |
+| `ui/SpectatorOverlay.js` | 45 | Spectator indicator badge |
+| `ui/DebugPanel.js` | 44 | Debug controls (visible with ?debug=true) |
+| `ui/AfkOverlay.js` | 94 | AFK warning modal. Heartbeat response button, auto-kick countdown |
+| `ui/GameMenu.js` | 62 | In-game menu: arena switching, logout, settings |
+| `PrivyBridge.jsx` | 115 | React mount for Privy auth widget. Only React component in the project |
+
+### Shared (`src/shared/` — 1 file)
+| File | Lines | Purpose |
+|------|-------|---------|
+| `constants.js` | 91 | Canonical definitions shared by server and client. ENTITY_TYPES, GAME_TYPES, SPELL_TYPES, FLOOR_TYPES, physics defaults, environment defaults |
+
+### Root Files
+| File | Lines | Purpose |
+|------|-------|---------|
+| `index.html` | ~300 | Game UI HTML: canvas, HUD overlays, chat, lobby, profile panel, onboarding |
+| `package.json` | 35 | Dependencies, scripts (dev, build, start) |
+| `vite.config.js` | — | Vite build config, React plugin, esbuild console stripping |
+| `docker-compose.yml` | — | Docker stack: game server, PostgreSQL, nginx, certbot |
+| `nginx.conf` | — | SSL termination, WebSocket/SSE proxy, static file serving |
+| `Dockerfile` | — | Node.js container, npm build + start |
+
+## Key Abstractions
+
+### WorldState (Facade Pattern)
+
+`WorldState` is the single source of truth for all game state. It delegates to 8 focused sub-managers but presents a unified API. All route handlers, GameRoom, and MiniGame access state through `worldState`.
+
+Managers and their responsibilities:
+- **EntityManager**: Entities Map (key: uuid), secondary indices for kinematic/chasing/group lookups. CRUD ops, batch operations
+- **PlayerManager**: Players Map (key: sessionId), join/leave, AFK tracking, spectator mode, `activeHumanCount`
+- **GameStateMachine**: Phase lifecycle, timers, auto-start (20s lobby), game history (last 8)
+- **EnvironmentManager**: Physics config, floor type (solid/none/lava), sky/fog/lighting, hazard plane
+- **SpellManager**: Active effects array, 10s cooldown enforcement
+- **ChatManager**: Messages and announcements arrays, events log
+- **LeaderboardManager**: Score recording, top-N queries, DB sync
+- **ChallengeManager**: Challenge CRUD, completion tracking
+
+The facade re-exports property getters so consumers access `worldState.entities`, `worldState.players`, `worldState.gameState` directly — these are live references to the underlying manager data.
+
+### MiniGame (Base Class)
+
+All game types extend `MiniGame`. The base class provides:
+
+**Lifecycle**: `start()` → `update(delta)` (called every tick) → `end(results)`
+
+**Trick system**: Mid-game events triggered by conditions:
+- Time triggers: fire at a specific elapsed time
+- Score triggers: fire when a player reaches a score
+- Death triggers: fire after N total deaths
+
+**Random obstacles**: Each game randomly spawns hazards from patterns: sweeper (rotating bar), moving_wall (patrol path), pendulum (swinging), falling_block (drops from above).
+
+**Entity tracking**: All entities spawned during a game are tagged with `gameId` and auto-removed when the game ends.
+
+**Extending**: Override `start()`, `checkWinCondition()`, `onTriggerActivated(playerId, entityId)`, `onPlayerDeath(playerId)`. Call `this.spawnEntity()` to create game entities.
+
+```javascript
+class MyGame extends MiniGame {
+  constructor(worldState, broadcastFn, config) {
+    super(worldState, broadcastFn, { ...config, type: 'my_type' });
+  }
+  start() { super.start(); /* spawn entities */ }
+  checkWinCondition() { /* return winnerId or null */ }
+  onTriggerActivated(playerId, entityId) { /* handle trigger */ }
+}
+```
+
+### ArenaInstance
+
+Per-arena isolation. Each instance holds:
+- `worldState` — WorldState facade (own EntityManager, PlayerManager, etc.)
+- `currentMiniGame` — Active MiniGame or null
+- `agentLoop` — AgentLoop instance (optional)
+- `sseClients` — Set of SSE connections for this arena
+- `webhooks` — Registered webhook URLs
+- `aiPlayers` — Active AI bot instances
+- `config` — Arena-specific settings
+- `apiKey` — Authentication for write operations
+
+Created via `ArenaManager.createArena()`, which returns `{ arena, apiKey }`.
+
+### Entity System
+
+6 entity types defined in `src/shared/constants.js`:
+
+| Type | Value | Collision | Purpose |
+|------|-------|-----------|---------|
+| PLATFORM | `'platform'` | Solid | Surfaces players stand on |
+| RAMP | `'ramp'` | Solid | Angled surfaces |
+| COLLECTIBLE | `'collectible'` | Trigger | Pickup items for scoring |
+| OBSTACLE | `'obstacle'` | Deadly | Kills on contact during playing phase |
+| TRIGGER | `'trigger'` | Trigger | Activates game events (goals, checkpoints) |
+| DECORATION | `'decoration'` | None | Visual only |
+
+Entity properties:
+- `id` — UUID, auto-generated
+- `type` — One of the 6 types above
+- `position` — `[x, y, z]` array
+- `size` — `[width, height, depth]` array
+- `properties` — Object with type-specific fields:
+  - `color` — Hex color string
+  - `shape` — Geometry name (box, sphere, cylinder, cone, pyramid, torus, dodecahedron, ring)
+  - `kinematic` — Boolean, enables patrol path movement
+  - `path` — Array of `[x,y,z]` waypoints for kinematic entities
+  - `speed` — Movement/rotation speed
+  - `rotating` — Boolean, enables Y-axis rotation
+  - `isGoal` — Boolean, marks trigger as game goal
+  - `isCheckpoint` — Boolean, marks trigger as checkpoint
+  - `isBounce` — Boolean, launches player upward
+  - `isSpeedBoost` — Boolean, doubles player speed
+  - `breakable` — Boolean, platform breaks after being stepped on
+  - `groupId` — String, links entities spawned by compose/prefab
+
+**Secondary indices** (EntityManager):
+- `_kinematicIds` — Set of entity IDs with kinematic behavior
+- `_chasingIds` — Set of entity IDs with chasing behavior
+- `_groupIndex` — Map of groupId -> Set of entity IDs
+
+### Game State Machine
+
+Phases: `lobby` → `countdown` → `playing` → `ended` → `lobby`
+
+| Phase | Duration | Description |
+|-------|----------|-------------|
+| `lobby` | Until game starts (20s auto-start) | Players join, agent builds arena |
+| `countdown` | 3 seconds | "GET READY!" + 3-2-1. Players teleported to spawn. Invulnerable |
+| `playing` | 30-90s (type-dependent) | Active gameplay. Obstacles spawn, tricks fire |
+| `ended` | 3 seconds | Results displayed |
+| (cooldown) | 15 seconds | Transition back to lobby |
+
+Key behaviors:
+- Auto-start timer: 20s after first player joins lobby
+- Players who join during `playing` phase become spectators
+- Deaths only count during `playing` phase
+- Lava/none floors become solid during non-playing phases
+- Game history tracks last 8 `{ type, template }` entries
+
+## HTTP API (50+ endpoints)
+
+Base URLs:
+- Default arena: `/api/...`
+- Specific arena: `/api/arenas/:arenaId/...`
+
+Authentication:
+- `X-Arena-API-Key` header required for write operations (except player-facing endpoints)
+- Player-facing endpoints (no key): `/chat/send`, `/chat/bridge`, `/agent-player/*`
+- Default arena is exempt from API key requirement for backward compatibility
+- Auth endpoints use Bearer token from Privy/guest login
+
+### Auth Endpoints
+
+| Method | Path | Body | Response |
+|--------|------|------|----------|
+| `POST` | `/api/auth/privy` | `{ accessToken }` | `{ token, user: { id, name, type, twitterUsername, walletAddress } }` |
+| `POST` | `/api/auth/guest` | `{ name? }` | `{ token, user: { id, name, type: 'guest' } }` |
+| `GET` | `/api/me` | — (Bearer token) | `{ id, name, type, ... }` |
+
+### Arena Endpoints
+
+| Method | Path | Body | Response |
+|--------|------|------|----------|
+| `GET` | `/api/arenas` | — | `{ arenas: [...] }` |
+| `POST` | `/api/arenas` | `{ name, description? }` | `{ arenaId, apiKey, name, endpoints: { context, compose, startGame, ... } }` |
+| `GET` | `/api/arenas/:id/info` | — | Arena public info |
+| `PATCH` | `/api/arenas/:id` | `{ name?, description?, gameMasterName?, config? }` | `{ success, arena }` (requires API key) |
+| `DELETE` | `/api/arenas/:id` | — | `{ success }` (requires API key) |
+| `POST` | `/api/arenas/:id/upvote` | — | `{ success, upvotes }` |
+
+### World Endpoints
+
+| Method | Path | Body | Response |
+|--------|------|------|----------|
+| `GET` | `/world/state` | — | `{ entities, players, physics, environment, floor, ... }` |
+| `POST` | `/world/spawn` | `{ type, position, scale?, properties? }` | `{ entity }` |
+| `POST` | `/world/compose` | `{ description, position, type?, scale?, properties? }` | `{ entities, groupId }` |
+| `POST` | `/world/modify` | `{ id, changes }` | `{ entity }` |
+| `POST` | `/world/destroy` | `{ id }` | `{ success }` |
+| `POST` | `/world/destroy-group` | `{ groupId }` | `{ success, count }` |
+| `POST` | `/world/clear` | — | `{ success }` (blocked during active game) |
+| `GET` | `/world/floor` | — | `{ type }` |
+| `POST` | `/world/floor` | `{ type }` | `{ success, type }` (solid/none/lava) |
+| `GET` | `/world/environment` | — | Environment config object |
+| `POST` | `/world/environment` | Environment config | `{ success }` |
+| `POST` | `/world/respawn` | `{ position: [x,y,z] }` | `{ success }` |
+| `POST` | `/world/template` | `{ name }` | `{ success }` (blocked during active game) |
+| `GET` | `/world/hazard-plane` | — | Hazard plane state |
+| `POST` | `/world/hazard-plane` | `{ enabled, height?, riseSpeed? }` | `{ success }` |
+| `POST` | `/physics/set` | `{ gravity?, friction?, bounce? }` | `{ success, physics }` |
+
+### Game Endpoints
+
+| Method | Path | Body | Response |
+|--------|------|------|----------|
+| `GET` | `/game/types` | — | `{ types: { reach: { name, description, minPlayers, ... } } }` |
+| `POST` | `/game/start` | `{ type?, template? }` | `{ success, gameId, type }` |
+| `POST` | `/game/end` | `{ winnerId?, result? }` | `{ success }` |
+| `GET` | `/game/state` | — | `{ phase, gameType, timeRemaining, players, scores }` |
+| `GET` | `/game/minigame` | — | Active mini-game status |
+| `POST` | `/game/building` | — | Enter building phase |
+| `POST` | `/game/winner` | `{ playerId }` | `{ success }` |
+| `POST` | `/game/trick` | `{ trigger, action, params? }` | `{ success }` |
+| `POST` | `/spell/cast` | `{ type, duration? }` | `{ success }` (10s cooldown, playing phase only) |
+| `POST` | `/chat/send` | `{ text }` | `{ success, message }` (3s rate limit) |
+| `POST` | `/chat/bridge` | `{ sender, platform, text }` | `{ success }` |
+| `GET` | `/chat/messages` | `?since=&limit=20` | `{ messages: [...] }` |
+| `POST` | `/announce` | `{ text, type?, duration? }` | `{ success }` (5s rate limit) |
+| `GET` | `/announcements` | — | Active announcements |
+| `GET` | `/leaderboard` | — | `{ leaderboard: [...] }` |
+| `GET` | `/stats` | — | `{ uptime, playerCount, entityCount, gamesPlayed }` |
+| `POST` | `/challenge/create` | `{ type, target?, description?, reward? }` | `{ success, challenge }` |
+| `GET` | `/challenge/status` | — | Active challenges |
+
+### Agent Endpoints
+
+| Method | Path | Body | Response |
+|--------|------|------|----------|
+| `GET` | `/health` | — | `{ status: 'ok', timestamp, arenaId }` |
+| `GET` | `/agent/context` | `?since_message=&since_event=` | Full game state for agent decision-making |
+| `GET` | `/agent/status` | — | `{ paused, dramaScore, invokeCount, ... }` |
+| `POST` | `/agent/pause` | — | `{ success }` |
+| `POST` | `/agent/resume` | — | `{ success }` |
+| `POST` | `/agent/heartbeat` | — | `{ success }` |
+| `GET` | `/ai/status` | — | `{ enabled, count }` |
+| `POST` | `/ai/enable` | — | `{ success }` |
+| `POST` | `/ai/disable` | — | `{ success }` |
+| `GET` | `/players` | — | All connected players |
+
+### Public Endpoints (no auth required)
+
+| Method | Path | Body | Response |
+|--------|------|------|----------|
+| `GET` | `/public/state` | — | Safe public state (no sensitive data) |
+| `GET` | `/public/leaderboard` | — | Public leaderboard |
+| `GET` | `/public/events` | `?since=&limit=20` | Event log |
+| `GET` | `/public/stats` | — | `{ uptime, playerCount, totalDeaths, bribesSubmitted, ... }` |
+| `GET` | `/stream/events` | — | SSE stream (text/event-stream) |
+| `POST` | `/webhooks/register` | `{ url, events? }` | `{ id }` |
+| `DELETE` | `/webhooks/:id` | — | `{ success }` |
+| `GET` | `/webhooks` | — | Registered webhooks |
+
+### Agent-Player Endpoints (external AI as player)
+
+| Method | Path | Body | Response |
+|--------|------|------|----------|
+| `POST` | `/agent-player/join` | `{ name }` | `{ success, playerId, player }` |
+| `POST` | `/agent-player/move` | `{ playerId, position }` | `{ success, position }` |
+| `GET` | `/agent-player/:id/state` | — | `{ me, otherPlayers, gameState, entities, ... }` |
+| `POST` | `/agent-player/chat` | `{ playerId, text }` | `{ success, message }` |
+| `POST` | `/agent-player/leave` | `{ playerId }` | `{ success }` |
+
+## WebSocket Messages
+
+### Client → Server (via `this.onMessage()` in GameRoom)
+| Message | Data | Purpose |
+|---------|------|---------|
+| `move` | `{ position, velocity?, rotation? }` | Player position update |
+| `died` | `{ cause? }` | Player death notification |
+| `respawn` | — | Request respawn |
+| `chat` | `{ text }` | Chat message |
+| `trigger_activated` | `{ entityId }` | Player touched trigger |
+| `collect` | `{ entityId }` | Player collected item |
+| `platform_step` | `{ entityId }` | Player stepped on breakable platform |
+| `challenge_complete` | `{ challengeId }` | Player completed challenge |
+| `afk_heartbeat` | `{ token }` | AFK warning response |
+
+### Server → Client (via `this.broadcast()` / `client.send()`)
+| Message | Data | Purpose |
+|---------|------|---------|
+| `init` | Full world state | Initial state on join |
+| `player_joined` | `{ id, name, type }` | New player notification |
+| `player_left` | `{ id, name }` | Player disconnected |
+| `player_moved` | `{ id, position, velocity, rotation }` | Position sync |
+| `player_died` | `{ id, cause }` | Death notification |
+| `player_respawned` | `{ id }` | Respawn notification |
+| `player_temporarily_left` | `{ id, name }` | Temporary disconnect |
+| `player_reconnected` | `{ id, name }` | Reconnection |
+| `players_teleported` | Teleport data | Mass teleport (countdown) |
+| `entity_spawned` | Entity object | New entity |
+| `entity_modified` | Entity object | Entity property change |
+| `entity_destroyed` | `{ id }` | Entity removed |
+| `entities_batch` | Array of entities | Bulk entity update |
+| `game_state_changed` | `{ phase, type, timeRemaining, ... }` | Game phase transition |
+| `minigame_ended` | `{ results, winners, losers }` | Game end results |
+| `chat_message` | `{ sender, text, timestamp }` | Chat message |
+| `chat_error` | `{ error }` | Chat rate limit error |
+| `announcement` | `{ text, type, duration }` | Global announcement |
+| `spell_cast` | `{ type, duration }` | Spell activation |
+| `effects_cleared` | — | All effects removed |
+| `environment_changed` | Environment config | Sky/fog/lighting update |
+| `floor_changed` | `{ type }` | Floor type change |
+| `physics_changed` | `{ gravity, friction, bounce }` | Physics update |
+| `respawn_point_changed` | `{ position }` | New respawn location |
+| `hazard_plane_update` | `{ height, enabled }` | Rising hazard position |
+| `hazard_plane_changed` | Config | Hazard plane config change |
+| `platform_cracking` | `{ id, breakAt }` | Platform about to break |
+| `world_cleared` | — | All entities removed |
+| `collectible_picked` | `{ playerId, entityId }` | Collectible picked up |
+| `trigger_activated` | `{ playerId, entityId }` | Trigger activated |
+| `challenge_completed` | `{ playerId, challengeId }` | Challenge done |
+| `afk_warning` | `{ token, timeout }` | AFK warning (respond with heartbeat) |
+| `afk_kicked` | `{ reason }` | Kicked for AFK |
+| `player_activated` | `{ id }` | Player activated (spectator → active) |
+
+## Client Architecture
+
+### Game Loop (`main.js`)
+
+Runs at 60fps via `requestAnimationFrame`:
+```
+updatePhysics(delta)          → AABB collision, gravity, triggers, surface effects
+updateCamera(delta)           → Orbit or spectator camera
+updateParticles(delta)        → Particle system tick
+animateEntities(delta)        → Rotation, glow pulse, kinematic interpolation
+updateShaderTime(time)        → TSL material time uniforms
+interpolateRemotePlayers()    → Smooth remote player positions
+renderFrame()                 → Three.js render call
+```
+
+### Three.js WebGPU Pipeline
+
+The renderer uses `WebGPURenderer` (Three.js r183) with automatic WebGL fallback. Materials are built with TSL (Three Shading Language) — `NodeMaterial` with custom toon shading, gradient maps, and emissive tuning.
+
+Adaptive quality monitors FPS and switches between 3 tiers:
+- **High**: Full post-processing, outline pass, 20 max particle systems
+- **Medium**: Reduced post-processing, 10 max particle systems
+- **Low**: Minimal effects, 5 max particle systems
+
+### Performance Optimizations
+
+- **Geometry cache**: Identical entities share geometry instances
+- **Material cache**: Non-animated materials cached; clone-on-write for per-entity mutations
+- **InstancedMesh batching**: Groups identical geometries into single draw calls
+- **Spatial hash**: O(1) collision lookups (cell size 8, 3x3 neighborhood)
+- **SpriteNodeMaterial particles**: WebGPU-native billboarded sprites
+- **UI debouncing**: rAF dirty flag on HUD updates
+- **Console stripping**: Production builds strip all `console.*` via esbuild
+
+## Environment Variables
+
+| Variable | Default | Required | Description |
+|----------|---------|----------|-------------|
+| `PORT` | `3000` | No | Server port |
+| `NODE_ENV` | — | Production | Set to `production` for static serving |
+| `JWT_SECRET` | — | Production | JWT signing secret |
+| `DATABASE_URL` | — | Production | PostgreSQL connection string |
+| `DB_PASSWORD` | — | Production | PostgreSQL password (Docker) |
+| `PRIVY_APP_ID` | — | No | Privy application ID (server) |
+| `PRIVY_APP_SECRET` | — | No | Privy application secret (server) |
+| `VITE_PRIVY_APP_ID` | — | No | Privy app ID (client, build-time) |
+| `VITE_PRIVY_CLIENT_ID` | — | No | Privy client ID (client, build-time) |
+| `MONAD_RPC_URL` | `https://rpc.monad.xyz` | No | Monad RPC endpoint |
+| `TREASURY_ADDRESS` | — | No | Treasury wallet (server) |
+| `VITE_TREASURY_ADDRESS` | — | No | Treasury wallet (client, build-time) |
+| `AI_PLAYERS` | `false` | No | Enable AI bot players |
+| `VITE_DEFAULT_ARENA` | `default` | No | Default arena ID |
+
+Without any env vars, the server starts in guest-only mode with in-memory storage.
+
+## Constants & Config
+
+### Entity Types (from `src/shared/constants.js`)
+```
+ENTITY_TYPES = {
+  PLATFORM: 'platform',
+  RAMP: 'ramp',
+  COLLECTIBLE: 'collectible',
+  OBSTACLE: 'obstacle',
+  TRIGGER: 'trigger',
+  DECORATION: 'decoration',
+}
+```
+
+### Game Types
+```
+GAME_TYPES = {
+  REACH: 'reach',
+  // Extensible — add more here
+}
+```
+
+Ships with one game type. Add new types by subclassing MiniGame.
+
+### Spell Types
+```
+SPELL_TYPES = {
+  low_gravity:  { name: 'Low Gravity',      defaultDuration: 20000 },
+  high_gravity: { name: 'Crushing Gravity',  defaultDuration: 15000 },
+  speed_boost:  { name: 'Speed Boost',       defaultDuration: 15000 },
+  slow_motion:  { name: 'Slow Motion',       defaultDuration: 10000 },
+  bouncy:       { name: 'Bouncy World',      defaultDuration: 20000 },
+}
+SPELL_COOLDOWN = 10000  // 10 seconds between casts
+```
+
+### Floor Types
+```
+FLOOR_TYPES = {
+  SOLID: 'solid',   // Normal ground
+  NONE: 'none',     // Abyss (fall to death)
+  LAVA: 'lava',     // Kills on contact
+}
+```
+Non-playing phases (lobby, countdown, ended): lava and none floors become solid.
+
+### Physics Defaults
+```
+DEFAULT_SERVER_PHYSICS = { gravity: -9.8, friction: 0.3, bounce: 0.5 }
+```
+
+### Default Environment
+```
+DEFAULT_ENVIRONMENT = {
+  skyColor: '#1a1a2e',
+  fogColor: '#1a1a2e',
+  fogNear: 50, fogFar: 200, fogDensity: 0.012,
+  ambientColor: '#404040', ambientIntensity: 0.5,
+  sunColor: '#ffffff', sunIntensity: 1.0,
+  sunPosition: [50, 100, 50],
+  skyPreset: null, materialTheme: null,
+}
+```
+
+### Entity Colors (defaults by type)
+```
+platform: '#3498db', ramp: '#2ecc71', collectible: '#f1c40f',
+obstacle: '#e74c3c', trigger: '#9b59b6', decoration: '#95a5a6'
+```
+
+### Timing Constants (server)
+```
+PORT = 3000
+MIN_LOBBY_MS = 5000
+AUTO_START_DELAY = 20000        // 20s lobby auto-start
+MIN_GAME_DURATION_MS = 30000    // Minimum game length
+ANNOUNCEMENT_COOLDOWN = 5000    // 5s between announcements
+AGENT_CHAT_COOLDOWN = 3000      // 3s between agent chats
+AFK_IDLE_MS = 120000            // 2 minutes to AFK warning
+AFK_KICK_MS = 15000             // 15s after warning to kick
+AFK_CHECK_INTERVAL = 5000       // Check every 5s
+MAX_ENTITIES = 500
+```
+
+### Arena Templates (shipped)
+```
+ALL_TEMPLATES = ['simple_arena', 'obstacle_course']
+```
+
+### Geometry Templates (client, for composed entities)
+16 named templates: `horn`, `tentacle`, `wing`, `dome`, `column`, `arch`, `bridge`, `ramp`, `spike`, `fin`, `claw`, `tooth`, `blade`, `shield`, `crown`, `helix`
+
+### Entity Shapes (basic geometries)
+8 shapes: `box` (default), `sphere`, `cylinder`, `cone`, `pyramid`, `torus`, `dodecahedron`, `ring`
+
+## How to Extend
+
+### Adding Game Types
+
+1. Create `src/server/games/MyGame.js` extending `MiniGame`
+2. Add type to `src/shared/constants.js` → `GAME_TYPES`
+3. Register in `src/server/games/index.js` → `createGameSync()`
+4. Create arena template in `src/server/ArenaTemplates.js`
+5. Register template name in `src/server/constants.js` → `ALL_TEMPLATES`
+
+MiniGame methods to override:
+- `start()` — Set up game entities (call `super.start()` first)
+- `checkWinCondition()` — Return winnerId or null, called every tick
+- `onTriggerActivated(playerId, entityId)` — Handle trigger collisions
+- `onPlayerDeath(playerId)` — Handle player deaths
+
+Helper methods:
+- `this.spawnEntity(type, position, size, properties)` — Spawn game entity (auto-tagged with gameId)
+- `this.broadcast(type, data)` — Send to all clients
+- `this.scores` — Map of playerId -> score
+- `this.winners` / `this.losers` — Arrays filled before end()
+
+### Adding Entity Types
+
+1. Add to `src/shared/constants.js` → `ENTITY_TYPES` and `DEFAULT_ENTITY_COLORS`
+2. Update `src/client/entities/EntityFactory.js` if special geometry needed
+3. Update `src/client/physics/PhysicsEngine.js` if special collision behavior needed
+
+### Adding Arena Templates
+
+1. Add template object to `TEMPLATES` in `src/server/ArenaTemplates.js`:
+```javascript
+my_template: {
+  name: 'Display Name',
+  gameType: 'reach',
+  floorType: 'solid',
+  respawnPoint: [0, 2, 0],
+  environment: { skyColor: '#87CEEB', fogColor: '#87CEEB' },
+  entities: [
+    { type: 'platform', position: [0,1,0], size: [20,0.5,20], properties: { color: '#3498db' } },
+    { type: 'trigger', position: [0,3,-15], size: [3,3,3], properties: { isGoal: true } },
+  ],
+}
+```
+2. Register in `src/server/constants.js` → `ALL_TEMPLATES`
+
+### Adding Spells
+
+1. Add to `src/shared/constants.js` → `SPELL` and `SPELL_TYPES`
+2. Handle physics effect in `src/client/physics/PhysicsEngine.js`
+3. Add visual effect in `src/client/vfx/ScreenEffects.js`
+
+### Creating Arenas via API
+
+```bash
+# Create
+curl -X POST http://localhost:3000/api/arenas \
+  -H "Content-Type: application/json" \
+  -d '{"name": "My Arena"}'
+# Response: { arenaId: "abc123", apiKey: "key-xxx", endpoints: { ... } }
+
+# Spawn entity in your arena
+curl -X POST http://localhost:3000/api/arenas/abc123/world/spawn \
+  -H "Content-Type: application/json" \
+  -H "X-Arena-API-Key: key-xxx" \
+  -d '{"type": "platform", "position": [0,5,0], "scale": [10,0.5,10]}'
+
+# Start game
+curl -X POST http://localhost:3000/api/arenas/abc123/game/start \
+  -H "X-Arena-API-Key: key-xxx" \
+  -d '{"template": "simple_arena"}'
+```
+
+### Agent-Player API (external AI as player)
+
+```bash
+# Join as agent player
+curl -X POST http://localhost:3000/api/agent-player/join \
+  -d '{"name": "MyBot"}'
+# Response: { playerId: "agent-player-xxx" }
+
+# Move
+curl -X POST http://localhost:3000/api/agent-player/move \
+  -d '{"playerId": "agent-player-xxx", "position": [5, 2, 3]}'
+
+# Get state
+curl http://localhost:3000/api/agent-player/agent-player-xxx/state
+
+# Leave
+curl -X POST http://localhost:3000/api/agent-player/leave \
+  -d '{"playerId": "agent-player-xxx"}'
+```
+
+## Dependencies
+
+### Production
+| Package | Version | Purpose |
+|---------|---------|---------|
+| `three` | ^0.183.1 | 3D rendering engine (WebGPU + WebGL) |
+| `colyseus` | ^0.15.0 | Server-side real-time multiplayer framework |
+| `colyseus.js` | ^0.15.28 | Client-side Colyseus SDK |
+| `@colyseus/ws-transport` | ^0.15.0 | WebSocket transport for Colyseus |
+| `express` | ^4.18.2 | HTTP server framework |
+| `cors` | ^2.8.5 | Cross-origin request handling |
+| `pg` | ^8.18.0 | PostgreSQL client |
+| `jsonwebtoken` | ^9.0.3 | JWT token creation and verification |
+| `@privy-io/react-auth` | ^3.13.1 | Client-side Privy auth (Twitter + wallets) |
+| `@privy-io/server-auth` | ^1.32.5 | Server-side Privy token verification |
+| `react` | ^19.2.4 | React (used only for Privy auth widget) |
+| `react-dom` | ^19.2.4 | React DOM renderer |
+| `viem` | ^2.45.1 | Ethereum/Monad blockchain client |
+| `buffer` | ^6.0.3 | Buffer polyfill for browser environment |
+| `cannon-es` | ^0.20.0 | Physics engine (available, not primary — AABB used) |
+
+### Development
+| Package | Version | Purpose |
+|---------|---------|---------|
+| `vite` | ^5.0.0 | Build tool + dev server with HMR |
+| `concurrently` | ^8.2.0 | Run server + client processes together |
+| `@vitejs/plugin-react` | ^5.1.3 | React JSX transform (for Privy widget) |

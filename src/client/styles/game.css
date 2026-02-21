@@ -1393,6 +1393,24 @@ body {
   background: var(--bg-mid);
   color: var(--danger);
 }
+.wp-btn.tip {
+  background: linear-gradient(135deg, #6c3bd5, #8b5cf6);
+  color: #fff;
+  border-color: #4c1d95;
+}
+.wp-btn.tip:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+.wp-tip-status {
+  font-size: 11px;
+  padding: 4px 0;
+  text-align: center;
+}
+.wp-tip-status.success { color: var(--success); }
+.wp-tip-status.error { color: var(--danger); }
+.wp-tip-status.pending { color: var(--gold); }
 .wp-guest-msg {
   padding: 24px 16px;
   font-size: 13px;
