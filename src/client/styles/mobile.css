@@ -1,0 +1,113 @@
+/* ============================================
+   Mobile Controls — Touch UI
+   Loaded globally; selectors target mobile-only elements.
+   ============================================ */
+#mobile-controls { display: block; }
+#joystick-zone {
+  position: fixed; left: 0; bottom: 0;
+  width: 50vw; height: 50vh;
+  z-index: 300;
+  touch-action: none;
+}
+#joystick-visual {
+  position: fixed;
+  pointer-events: none;
+  z-index: 301;
+}
+#joystick-base {
+  width: 120px; height: 120px;
+  border: 3px solid rgba(255,255,255,0.3);
+  border-radius: 50%;
+  position: absolute;
+  transform: translate(-50%, -50%);
+}
+#joystick-thumb {
+  width: 50px; height: 50px;
+  background: rgba(255,255,255,0.5);
+  border-radius: 50%;
+  position: absolute;
+  transform: translate(-50%, -50%);
+}
+#mobile-buttons {
+  position: fixed;
+  right: 15px;
+  bottom: 100px;
+  z-index: 300;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.mobile-btn {
+  width: 70px; height: 70px;
+  border-radius: 50%;
+  border: 2px solid rgba(255,255,255,0.3);
+  background: rgba(0,0,0,0.5);
+  color: white;
+  font-size: 11px;
+  font-weight: bold;
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.mobile-btn:active, .mobile-btn.pressed {
+  background: rgba(255,255,255,0.2);
+  border-color: rgba(255,255,255,0.6);
+}
+.jump-btn { background: rgba(46, 204, 113, 0.4); border-color: #2ecc71; }
+.sprint-btn { background: rgba(52, 152, 219, 0.4); border-color: #3498db; }
+.lb-btn { background: rgba(155, 89, 182, 0.4); border-color: #9b59b6; width: 50px !important; height: 50px !important; font-size: 10px !important; }
+#chat-toggle-btn { display: none; }
+
+/* Mobile responsive adjustments */
+@media (max-width: 768px) {
+  #ui { max-width: 200px; padding: 8px; font-size: 11px; }
+  #ui h1 { font-size: 14px; }
+  #chat-panel { width: 280px; max-height: 200px; bottom: 10px; left: 10px; }
+  #chat-messages { max-height: 150px; font-size: 11px; }
+  #chat-input { font-size: 12px; }
+  #controls { display: none !important; }
+  #game-status { padding: 8px; min-width: 100px; }
+  #game-timer { font-size: 22px; }
+  #leaderboard-panel { width: 90vw; max-width: 320px; }
+  #bribe-panel { bottom: 10px; right: auto; left: 50%; transform: translateX(-50%); }
+  .bribe-btn { padding: 8px 16px; font-size: 12px; }
+  .announcement { font-size: 14px; padding: 10px 20px; }
+  #announcements { top: 100px; }
+  #chat-toggle-btn {
+    display: block;
+    position: fixed; bottom: 10px; left: 10px;
+    width: 44px; height: 44px;
+    border-radius: 50%;
+    background: rgba(0,0,0,0.6);
+    border: 2px solid rgba(255,255,255,0.3);
+    color: white; font-size: 10px; font-weight: bold;
+    z-index: 350; touch-action: manipulation;
+    -webkit-user-select: none; user-select: none;
+  }
+}
+
+/* Landscape mobile layout */
+@media (orientation: landscape) and (max-height: 500px) {
+  #joystick-zone { width: 35vw; height: 70vh; }
+  #mobile-buttons {
+    flex-direction: row !important;
+    bottom: 15px !important;
+    right: 15px !important;
+  }
+  .mobile-btn { width: 60px !important; height: 60px !important; font-size: 10px !important; }
+  #game-status { padding: 6px 12px !important; min-width: 80px !important; top: 8px !important; }
+  #game-timer { font-size: 18px !important; }
+  #game-phase { font-size: 10px !important; }
+  #leaderboard-panel { width: 85vw !important; max-width: 300px !important; font-size: 12px !important; }
+  #ui { max-width: 150px !important; padding: 6px !important; font-size: 10px !important; }
+  #ui h1 { font-size: 12px !important; }
+  #chat-panel {
+    width: 240px !important; max-height: 150px !important;
+    bottom: 80px !important; left: 10px !important;
+  }
+  #chat-messages { max-height: 100px !important; }
+  #announcements { top: 70px !important; }
+  .announcement { font-size: 12px !important; padding: 6px 14px !important; }
+  #bribe-panel { bottom: 80px !important; }
+  #chat-toggle-btn { bottom: 80px !important; left: 10px !important; }
+}

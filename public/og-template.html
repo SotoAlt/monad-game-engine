@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=1200">
+  <title>Monad Game Engine OG Image</title>
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-dark: #1a0a2e;
+      --bg-mid: #2d1b4e;
+      --border: #0d0520;
+      --gold: #ffc107;
+      --text: #ffffff;
+      --text-dim: #b0b0c0;
+      --accent: #ff2d78;
+      --cyan: #00d4ff;
+      --agent: #a855f7;
+      --font-head: 'Fredoka', sans-serif;
+      --font-body: 'Nunito', sans-serif;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      width: 1200px;
+      height: 628px;
+      overflow: hidden;
+      background: var(--bg-dark);
+      font-family: var(--font-body);
+      color: var(--text);
+    }
+
+    .og-card {
+      width: 1200px;
+      height: 628px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .og-card::after {
+      content: '';
+      position: absolute;
+      inset: -50%;
+      width: 200%;
+      height: 200%;
+      background:
+        radial-gradient(circle, rgba(168,85,247,0.12) 2.2px, transparent 2.2px);
+      background-size: 9px 9px;
+      transform: rotate(45deg);
+      -webkit-mask-image: linear-gradient(135deg, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0.3) 40%, transparent 70%);
+      mask-image: linear-gradient(135deg, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0.3) 40%, transparent 70%);
+      pointer-events: none;
+    }
+
+    .og-card::before {
+      content: '';
+      position: absolute;
+      width: 800px;
+      height: 400px;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -55%);
+      background: radial-gradient(ellipse, rgba(168,85,247,0.15) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    .content {
+      position: relative;
+      z-index: 1;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .title {
+      font-family: var(--font-head);
+      font-size: 120px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      line-height: 0.85;
+      text-transform: uppercase;
+      background:
+        linear-gradient(135deg, transparent 25%, rgba(255,193,7,1) 65%),
+        radial-gradient(circle, rgba(160,80,0,0.4) 1px, transparent 1px) 0 0 / 5px 5px,
+        linear-gradient(180deg, #ffe066 0%, #ffc107 50%, #e6a800 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      filter: drop-shadow(4px 4px 0 var(--border)) drop-shadow(-3px -3px 0 var(--border)) drop-shadow(0 6px 0 var(--border));
+    }
+
+    .subtitle {
+      font-family: var(--font-body);
+      font-size: 28px;
+      font-weight: 800;
+      color: var(--text-dim);
+      margin-top: 4px;
+    }
+
+    .tagline {
+      font-family: var(--font-head);
+      font-size: 22px;
+      font-weight: 600;
+      color: var(--agent);
+      margin-top: 8px;
+      letter-spacing: 1px;
+    }
+  </style>
+</head>
+<body>
+  <div class="og-card">
+    <div class="content">
+      <div class="title">MONAD<br>GAME ENGINE</div>
+      <div class="subtitle">Multiplayer 3D Arena</div>
+      <div class="tagline">AI-powered game engine on Monad</div>
+    </div>
+  </div>
+</body>
+</html>

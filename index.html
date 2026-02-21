@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Monad Game Engine</title>
+
+  <!-- Open Graph / Twitter Card -->
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Monad Game Engine">
+  <meta property="og:description" content="Multiplayer 3D game engine with AI agent, WebGPU rendering, and Monad blockchain.">
+  <meta name="twitter:card" content="summary_large_image">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+
+</head>
+<body>
+  <div id="login-screen">
+    <!-- Phase 1: Loading splash (visible by default) -->
+    <div id="login-splash" class="login-container">
+      <h1>Monad Game Engine</h1>
+      <p class="login-subtitle">Loading...</p>
+      <div class="login-loader">
+        <div class="loader-spinner"></div>
+        <p class="login-status">Loading...</p>
+      </div>
+    </div>
+    <!-- Phase 2: Login buttons (hidden until ready) -->
+    <div id="login-buttons-container" class="login-container" style="display:none">
+      <h1>Monad Game Engine</h1>
+      <p class="login-subtitle">Multiplayer 3D Arena</p>
+      <div class="login-buttons">
+        <button id="btn-continue" class="login-btn continue" style="display:none">Continue</button>
+        <button id="btn-twitter-login" class="login-btn twitter" disabled>
+          <span class="btn-spinner"></span> Loading Twitter...
+        </button>
+        <button id="btn-guest" class="login-btn guest">Play as Guest</button>
+      </div>
+      <p id="login-status" class="login-status"></p>
+      <div class="login-onboarding">
+        <h3>How it works</h3>
+        <div class="onboard-item">
+          <div class="onboard-icon">&#x1F3AE;</div>
+          <div class="onboard-text"><strong>AI-powered game master.</strong> An AI agent builds arenas, starts games, and reacts to players in real-time.</div>
+        </div>
+        <div class="onboard-item">
+          <div class="onboard-icon">&#x1F4AC;</div>
+          <div class="onboard-text"><strong>Chat with @agent</strong> to request things &mdash; "spawn obstacles", "start a race", "make lava floor"</div>
+        </div>
+        <div class="onboard-item">
+          <div class="onboard-icon">&#x26D3;</div>
+          <div class="onboard-text"><strong>Monad blockchain</strong> integration. Log in with Twitter to get a wallet.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div id="arena-lobby" style="display:none">
+    <div class="lobby-container">
+      <h1>Choose an Arena</h1>
+      <p class="lobby-subtitle">Pick your battleground</p>
+      <div id="arena-list" class="arena-list"></div>
+      <p id="arena-status" class="login-status"></p>
+      <button id="arena-switch-account" class="lobby-switch-btn">Switch Account</button>
+    </div>
+  </div>
+  <div id="ui" style="display:none">
+    <h1>Monad Game Engine</h1>
+    <div id="stats">
+      <div>Entities: <span id="entity-count">0</span></div>
+      <div>Players: <span id="player-count">0</span></div>
+      <div>Physics: <span id="physics-info">-</span></div>
+    </div>
+    <div id="entities"></div>
+  </div>
+  <div id="crosshair"></div>
+  <div id="chat-panel" style="display:none">
+    <div id="chat-messages"></div>
+    <input id="chat-input" placeholder="Chat... (@agent to tag)" maxlength="200" />
+  </div>
+  <div id="controls" style="display:none">
+    <div class="controls-row">
+      <div class="control-group">
+        <div class="keys-wasd">
+          <div><kbd>W</kbd></div>
+          <div><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></div>
+        </div>
+        <span class="control-label">Move</span>
+      </div>
+      <div class="control-group">
+        <kbd class="key-wide">Space</kbd>
+        <span class="control-label">Jump</span>
+      </div>
+      <div class="control-group">
+        <kbd>&#x21E7;</kbd>
+        <span class="control-label">Sprint</span>
+      </div>
+      <div class="control-group">
+        <kbd>L</kbd>
+        <span class="control-label">Board</span>
+      </div>
+      <div class="control-group">
+        <kbd class="key-wide">Enter</kbd>
+        <span class="control-label">Chat</span>
+      </div>
+      <div class="control-group">
+        <kbd>&#x1F5B1;</kbd>
+        <span class="control-label">Look</span>
+      </div>
+    </div>
+  </div>
+  <div id="toast-container"></div>
+  <div id="announcements"></div>
+  <div id="game-status" class="lobby">
+    <div id="game-status-info">
+      <div id="game-phase">LOBBY</div>
+      <div id="game-type"></div>
+    </div>
+    <div id="game-timer"></div>
+  </div>
+  <div id="score-overlay" style="display:none"></div>
+  <div id="checkpoint-display" style="display:none"></div>
+  <div id="profile-btn">
+    <img id="profile-pfp" src="" alt="">
+    <span id="profile-name"></span>
+  </div>
+  <div id="wallet-panel">
+    <div class="wp-header">
+      <img id="wp-pfp" src="" alt="">
+      <div class="wp-header-info">
+        <div id="wp-display-name" class="wp-display-name"></div>
+        <div id="wp-username" class="wp-username"></div>
+      </div>
+    </div>
+    <div id="wp-guest-msg" class="wp-guest-msg" style="display:none">
+      Login with Twitter to unlock your wallet
+    </div>
+    <div id="wp-tabs-container" style="display:none">
+      <div class="wp-tabs">
+        <button class="wp-tab active" data-tab="overview">Overview</button>
+        <button class="wp-tab" data-tab="history">History</button>
+        <button class="wp-tab" data-tab="fund">Fund</button>
+      </div>
+      <div id="wp-tab-overview" class="wp-tab-content active">
+        <div class="wp-section-label">Wallet</div>
+        <div class="wp-wallet-row">
+          <span id="wp-address" class="wp-address">Loading...</span>
+          <button id="wp-copy" class="wp-copy-btn" title="Copy address">&#x2398;</button>
+          <button id="wp-explorer" class="wp-copy-btn" title="View on explorer">&#x2197;</button>
+        </div>
+        <div class="wp-balance-row">
+          <span id="wp-balance" class="wp-balance-value">...</span>
+          <span class="wp-balance-label">MON</span>
+        </div>
+        <div class="wp-network">Monad</div>
+      </div>
+      <div id="wp-tab-history" class="wp-tab-content">
+        <div class="wp-tx-list" id="wp-tx-list">
+          <div class="wp-tx-empty">Loading...</div>
+        </div>
+      </div>
+      <div id="wp-tab-fund" class="wp-tab-content">
+        <div class="wp-section-label">Fund your wallet</div>
+        <div id="wp-fund-address" class="wp-fund-address"></div>
+        <div id="wp-fund-hint" class="wp-fund-hint"></div>
+      </div>
+    </div>
+    <div class="wp-actions">
+      <button id="wp-export" class="wp-btn export" style="display:none">Export Private Key</button>
+      <button id="wp-logout" class="wp-btn logout">Logout</button>
+    </div>
+  </div>
+  <div id="leaderboard-panel">
+    <h3>Leaderboard</h3>
+    <div id="leaderboard-entries"></div>
+  </div>
+  <div id="debug-panel" style="display:none">
+    <div style="font-weight:bold; margin-bottom:6px;">Debug</div>
+    <label style="display:flex; align-items:center; gap:6px; cursor:pointer; font-size:11px;">
+      <input type="checkbox" id="toggle-ai"> AI Players
+    </label>
+    <label style="display:flex; align-items:center; gap:6px; cursor:pointer; font-size:11px; margin-top:4px;">
+      <input type="checkbox" id="toggle-agent"> Agent Loop
+    </label>
+    <div id="debug-info" style="font-size:10px; opacity:0.7; margin-top:6px;"></div>
+  </div>
+  <div id="spectator-overlay">
+    <div id="agent-status">
+      <div>Phase: <span id="agent-phase">WELCOME</span></div>
+    </div>
+    <div id="kill-feed"></div>
+  </div>
+  <button id="menu-btn" title="Menu">Menu</button>
+  <div id="menu-dropdown" style="display:none">
+    <button id="menu-change-arena">Change Arena</button>
+    <button id="menu-logout">Logout</button>
+  </div>
+  <button id="help-btn" title="How to play">? How to Play</button>
+  <div id="help-overlay" style="display:none">
+    <div class="help-content">
+      <div class="help-header">
+        <h2>Monad Game Engine</h2>
+        <p>An AI game master runs the show. Compete in mini-games!</p>
+      </div>
+      <div class="help-section">
+        <div class="help-section-title">The Concept</div>
+        <div class="help-row">
+          <div class="help-icon purple">&#x1F3AE;</div>
+          <div>
+            <div class="help-label">The AI Game Master builds games live</div>
+            <div class="help-desc">It spawns arenas, starts mini-games, casts spells, and reacts to what players do.</div>
+          </div>
+        </div>
+        <div class="help-row">
+          <div class="help-icon gold">&#x1F399;</div>
+          <div>
+            <div class="help-label">Talk to it in chat with @agent</div>
+            <div class="help-desc">Ask for anything: "spawn obstacles", "start a race", "change the environment"</div>
+          </div>
+        </div>
+      </div>
+      <div class="help-section">
+        <div class="help-section-title">Gameplay</div>
+        <div class="help-row">
+          <div class="help-icon green">&#x23F3;</div>
+          <div>
+            <div class="help-label">Games start automatically</div>
+            <div class="help-desc">Wait in the lobby &mdash; a new game starts every ~20 seconds or when the agent decides.</div>
+          </div>
+        </div>
+        <div class="help-row">
+          <div class="help-icon red">&#x1F3C6;</div>
+          <div>
+            <div class="help-label">Compete in mini-games</div>
+            <div class="help-desc">Race to goals, survive obstacles, and climb the leaderboard.</div>
+          </div>
+        </div>
+      </div>
+      <div class="help-section">
+        <div class="help-section-title">Controls</div>
+        <div class="help-row">
+          <div class="help-icon purple">&#x2328;</div>
+          <div>
+            <div class="help-label">WASD move &middot; Space jump &middot; Shift sprint</div>
+            <div class="help-desc">Enter to chat &middot; L for leaderboard &middot; Mouse to look around</div>
+          </div>
+        </div>
+      </div>
+      <div class="help-dismiss">Click anywhere to close &middot; Press ? anytime to reopen</div>
+    </div>
+  </div>
+  <div id="rotate-overlay">
+    <div class="rotate-icon">&#x1F4F1;</div>
+    <p>Rotate to landscape</p>
+  </div>
+  <div id="privy-root" style="display:none"></div>
+  <div id="game"></div>
+  <script>
+    // Privy analytics events patch — prevents CORS errors on custom domains.
+    (function() {
+      var _fetch = window.fetch;
+      window.fetch = function() {
+        var url = typeof arguments[0] === 'string' ? arguments[0] : (arguments[0] && arguments[0].url);
+        if (url && url.indexOf('/analytics_events') !== -1) {
+          return Promise.resolve(new Response('{}', { status: 200 }));
+        }
+        return _fetch.apply(this, arguments);
+      };
+    })();
+  </script>
+  <script type="module" src="/src/client/main.js"></script>
+</body>
+</html>
