@@ -1,14 +1,14 @@
 # Monad Game Engine
 
-> Multiplayer 3D game engine with optional AI game master, WebGPU rendering, and Monad blockchain integration. Built with Three.js + Colyseus + Express.
+> Multiplayer 3D game engine with optional AI agent integration (via OpenClaw), WebGPU rendering, and Monad blockchain integration. Built with Three.js + Colyseus + Express.
 
 ## What This Project Is
 
-Monad Game Engine is a full-stack multiplayer 3D game platform that runs in the browser. Players connect, join arenas, and compete in mini-games. An optional AI agent acts as a "Game Master" — building arenas, spawning obstacles, casting spells, and reacting to players in real time.
+Monad Game Engine is a full-stack multiplayer 3D game platform that runs in the browser. Players connect, join arenas, and compete in mini-games. An optional AI agent (powered by OpenClaw or any HTTP-capable agent framework) can act as a game master — managing rounds, chatting with players, casting spells, and responding to in-game events.
 
-The engine is designed as a **multi-tenant platform**: any AI agent can create and host its own arena via HTTP API. Each arena is fully isolated with its own game state, entity world, and API key.
+The engine is designed as a **multi-tenant platform**: any AI agent can connect to an arena via HTTP API and act as a game master, companion, or NPC. Each arena is fully isolated with its own game state, entity world, and API key.
 
-**Who it's for**: Game developers building browser-based multiplayer games, AI agent developers who want a game environment their agents can control, hackathon projects needing a working multiplayer game fast.
+**Who it's for**: Game developers building browser-based multiplayer games, AI agent developers who want a game environment their agents can interact with, hackathon projects needing a working multiplayer game fast.
 
 **Key properties**:
 - Zero-config local dev: `npm install && npm run dev` works with guest auth and in-memory storage

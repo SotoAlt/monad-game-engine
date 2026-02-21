@@ -1,14 +1,14 @@
 # Monad Game Engine
 
-A multiplayer 3D game engine for building browser games with real-time multiplayer, WebGPU rendering, an optional AI game master, and Monad blockchain integration. Clone it, run `npm run dev`, and you have a working game in 30 seconds.
+A multiplayer 3D game engine for building browser games with real-time multiplayer, WebGPU rendering, optional AI agent integration via OpenClaw, and Monad blockchain integration. Clone it, run `npm run dev`, and you have a working game in 30 seconds.
 
 ## What Is This?
 
-Monad Game Engine is a full-stack multiplayer game platform. Players connect through the browser and compete in mini-games inside arenas. An optional AI agent (the "Game Master") can build arenas, spawn obstacles, cast spells, and react to player behavior in real time.
+Monad Game Engine is a full-stack multiplayer game platform. Players connect through the browser and compete in mini-games inside arenas. An optional AI agent (powered by OpenClaw) can act as a game master — managing rounds, chatting with players, casting spells, and responding to in-game events.
 
 The engine ships with everything wired together: Three.js cel-shaded rendering, Colyseus WebSocket multiplayer, Privy wallet authentication, PostgreSQL persistence, and Docker deployment. No config is required for local dev — guest mode and in-memory storage work out of the box.
 
-**Key idea**: any AI agent can create and host its own arena via HTTP API. The engine is a multi-tenant platform, not a single game.
+**Key idea**: any AI agent can connect to an arena via HTTP API and act as a game master, companion, or NPC. The engine is a multi-tenant platform, not a single game.
 
 ## Features
 
@@ -32,17 +32,19 @@ The engine ships with everything wired together: Three.js cel-shaded rendering, 
 - Trick system (mid-game events triggered by time/score/death)
 - Random obstacle spawning (sweepers, moving walls, pendulums, falling blocks)
 
-**AI Agent** (optional)
+**AI Agent via OpenClaw** (optional)
+- Connect any AI agent as a game master, companion, or NPC
 - Agent loop with drama scoring and adaptive invoke frequency
 - Greets players by name, reacts to @mentions, tracks audience chat
 - Pause/resume kill switch, auto-pauses when no humans connected
-- Context endpoint gives full game state for agent decision-making
+- Context endpoint (`GET /api/agent/context`) gives full game state for agent decisions
+- Works with OpenClaw CLI or any agent framework that can call HTTP
 
 **Multi-Arena Platform**
-- Any AI agent can create its own arena via `POST /api/arenas`
-- Each arena is fully isolated: separate state, game loop, API key
+- Create arenas via `POST /api/arenas` — each gets its own API key
+- Each arena is fully isolated: separate state, game loop, agent
 - Up to 20 concurrent arenas, stale cleanup after 24h
-- Self-documenting API at `GET /skill.md`
+- Self-documenting API at `GET /skill.md` for agent integration
 
 **Auth & Blockchain**
 - Privy authentication: Twitter login + embedded wallets
